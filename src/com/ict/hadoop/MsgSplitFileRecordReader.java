@@ -37,7 +37,7 @@ public class MsgSplitFileRecordReader implements RecordReader<Text, Text>{
 		//start = fileSplit.getStart();
 		length = fileSplit.getLength();
 		final Path path = fileSplit.getPath();
-		keyName = path.getName().replaceAll("[^a-zA-Z0-9]", "");;
+		keyName = FileNameUtil.getFormatedName(path.getName());
 		final FileSystem fs = path.getFileSystem(jobConf);
 		fsDataInputStream = fs.open(path);
 		start = fsDataInputStream.getPos();

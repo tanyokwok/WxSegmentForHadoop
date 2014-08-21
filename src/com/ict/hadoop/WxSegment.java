@@ -36,15 +36,13 @@ import org.apache.log4j.Logger;
 public class WxSegment{
 	private static Logger logger = Logger.getLogger(WxSegment.class);
 	
-	public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, NullWritable>
+	public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, Text>
 	{
-		private MultipleOutputs mos;
-		private OutputCollector<Text,NullWritable> collector;
+		
 //	
 		@Override
 		public void configure(JobConf jobConf){
 			super.configure(jobConf);
-			mos = new MultipleOutputs(jobConf);
 			if(Segment.init(new File("").getAbsolutePath()+"/ICTClassLib/") == false)
 			{
 				logger.error("ICTClass初始化错误,系统退出");
@@ -57,7 +55,7 @@ public class WxSegment{
 		
 		@Override
 		public void map(Text key, Text value,
-				OutputCollector<Text,NullWritable> output, Reporter reporter)
+				OutputCollector<Text,Text> output, Reporter reporter)
 				throws IOException {
 //			logger.info("AbsolutePath:" + new File("./ICTClassLib").getAbsolutePath());
 //			try {
@@ -75,44 +73,48 @@ public class WxSegment{
 			
 			lineString = Segment.segString(lineString, 1);
 			if(lineString != null){
-				collector = mos.getCollector(key.toString(), reporter);
-				collector.collect(new Text(lineString),NullWritable.get());
+				output.collect(key, new Text(lineString));
 			}
 //			logger.info(lineString);
-//			output.collect(key, new Text(lineString));
+//			
 			
 		}
 		@Override
 		public void close() throws IOException {
 			Segment.close();
-            mos.close();
         }
 
 	}
 	
-	public static Set<String> listAll(String dir) throws IOException {
-
-		Configuration conf = new Configuration();
-		FileSystem fs = FileSystem.get(conf);
-		FileStatus[] stats = fs.listStatus(new Path(dir));
-		Set<String> list = new HashSet<String>();
-		for (int i = 0; i < stats.length; ++i)
-		{
-			if ( !stats[i].isDir() )
-			{
-				String filename = stats[i].getPath().getName();
-				filename = filename.replaceAll("[^a-zA-Z0-9]", "");
-				list.add(filename);
-				//System.out.println("File: "+ stats[i].getPath().getName());
-				logger.info("File: "+ filename);
-			}
-			else
-				logger.warn(stats[i].getPath().getName() +" is a directory.");
-
+	public static class Reduce extends MapReduceBase implements Reducer<Text, Text, Text, NullWritable>{
+		private MultipleOutputs mos;
+		private OutputCollector<Text,NullWritable> collector;
+		
+		@Override
+		public void configure(JobConf jobConf){
+			super.configure(jobConf);
+			mos = new MultipleOutputs(jobConf);
 		}
-		fs.close();
-		return list;
+		
+		@Override
+		public void reduce(Text key, Iterator<Text> values,
+				OutputCollector<Text, NullWritable> output, Reporter reporter)
+				throws IOException {
+			collector = mos.getCollector(key.toString(), reporter);
+			int count = 0;
+			while( values.hasNext() ){
+				Text temp = values.next();
+				collector.collect(new Text(temp),NullWritable.get());
+				count ++;
+			}
+			output.collect(new Text("File "+key.toString()+" has "+ count +" message(s)."), NullWritable.get());
+		}
+		@Override
+		public void close() throws IOException {
+            mos.close();
+        }
 	}
+	
 	
 	public static void main(String [] args) throws IOException, URISyntaxException{
 		Configuration conf = new Configuration();
@@ -152,16 +154,16 @@ public class WxSegment{
         
         jobConf.setJobName("WxSegment");
         jobConf.setMapperClass(Map.class);
-//        jobConf.setReducerClass(Reduce.class);
+        jobConf.setReducerClass(Reduce.class);
         jobConf.setMapOutputKeyClass(Text.class);
         jobConf.setMapOutputValueClass(Text.class);
         jobConf.setInputFormat(MsgSplitInputFormat.class);
         
-//        jobConf.setOutputKeyClass(Text.class);
-//        jobConf.setOutputValueClass(NullWritable.class);
+        jobConf.setOutputKeyClass(Text.class);
+        jobConf.setOutputValueClass(NullWritable.class);
         
-        jobConf.setNumReduceTasks(0);
-        Set<String> set = listAll(remainingArgs[0]);
+//        jobConf.setNumReduceTasks(0);
+        Set<String> set = FileNameUtil.listAll(remainingArgs[0]);
         for( String filename : set){
         	MultipleOutputs.addNamedOutput(jobConf,
                     filename,
